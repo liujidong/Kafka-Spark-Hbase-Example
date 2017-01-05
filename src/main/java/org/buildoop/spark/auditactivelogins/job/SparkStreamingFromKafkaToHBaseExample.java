@@ -1,33 +1,23 @@
 package org.buildoop.spark.auditactivelogins.job;
 
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.regex.Pattern;
-
+import com.google.common.collect.Lists;
 import org.apache.spark.api.java.JavaPairRDD;
-import org.apache.spark.api.java.function.FlatMapFunction;
-import org.apache.spark.api.java.function.Function;
-import org.apache.spark.api.java.function.Function2;
-import org.apache.spark.api.java.function.PairFunction;
-import org.apache.spark.api.java.function.VoidFunction;
+import org.apache.spark.api.java.function.*;
 import org.apache.spark.broadcast.Broadcast;
 import org.apache.spark.streaming.Duration;
 import org.apache.spark.streaming.Time;
 import org.apache.spark.streaming.api.java.JavaDStream;
 import org.apache.spark.streaming.api.java.JavaPairDStream;
 import org.apache.spark.streaming.api.java.JavaStreamingContext;
-import org.apache.spark.streaming.flume.FlumeUtils;
-import org.apache.spark.streaming.flume.SparkFlumeEvent;
 import org.apache.spark.streaming.kafka.KafkaUtils;
 import org.buildoop.spark.auditactivelogins.hbase.HBaseCounterIncrementor;
-
-import com.google.common.collect.Lists;
-
 import scala.Tuple2;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.regex.Pattern;
+
 //import com.cloudera.sa.sparkonalog.hbase.HBaseCounterIncrementor;
-import com.google.common.base.Optional;
 
 public class SparkStreamingFromKafkaToHBaseExample {
 	
@@ -68,7 +58,7 @@ public class SparkStreamingFromKafkaToHBaseExample {
 		//JavaDStream<SparkFlumeEvent> flumeStream = sc.flumeStream(host, port);
 		
 		
-		JavaPairDStream<String, String> messages = KafkaUtils.createStream(sc, args[1], args[2], topicMap);
+		JavaPairDStream<String, String> messages = KafkaUtils.createStream(sc, zkQuorum, group, topicMap);
 
 	    JavaDStream<String> lines = messages.map(new Function<Tuple2<String, String>, String>() {
 	      @Override
@@ -83,20 +73,20 @@ public class SparkStreamingFromKafkaToHBaseExample {
 	          return Lists.newArrayList(SPACE.split(x));
 	        }
 	    });
-	    
-	    JavaPairDStream<String, Integer> wordCounts = words.map(
-	    	      new PairFunction<String, String, Integer>() {
-	    	        @Override
-	    	        public Tuple2<String, Integer> call(String s) {
-	    	          return new Tuple2<String, Integer>(s, 1);
-	    	        }
-	    	      }).reduceByKey(new Function2<Integer, Integer, Integer>() {
-	    	        @Override
-	    	        public Integer call(Integer i1, Integer i2) {
-	    	          return i1 + i2;
-	    	        }
-	    	      });
-	    
+
+		JavaPairDStream<String, Integer> wordCounts = words.mapToPair(
+				new PairFunction<String, String, Integer>() {
+					@Override
+					public Tuple2<String, Integer> call(String s) {
+						return new Tuple2<String, Integer>(s, 1);
+					}
+				}).reduceByKey(new Function2<Integer, Integer, Integer>() {
+			@Override
+			public Integer call(Integer i1, Integer i2) {
+				return i1 + i2;
+			}
+		});
+		//JavaPairDStream<String, Integer> wordCounts = words.mapToPair(s -> new Tuple2(s, 1));//.reduceByKey((a, b) -> a + b);
 		wordCounts.foreach(new Function2<JavaPairRDD<String,Integer>, Time, Void>() {
 
 			@Override
@@ -119,7 +109,6 @@ public class SparkStreamingFromKafkaToHBaseExample {
 			}});
 
 		sc.start();
-
 
 		
 		//JavaDStream<SparkFlumeEvent> flumeStream = FlumeUtils.createStream(sc, host, port);
